@@ -67,15 +67,17 @@
 <div id="info">
   <div style="font-weight:700;">Giu &amp; Mel Cooking and Traveling Around the World</div>
 
-  <!-- ✅ Counter -->
-  <div style="margin-top:6px; font-weight:700;">
-    Tried: <span id="triedCount">0</span>/<span id="totalCount">0</span>
+  <div style="margin-top:6px;">
+    Shift + left click a country to open notes
+    <span style="opacity:0.75;">
+      (Tried: <span id="triedCount">0</span>/<span id="totalCount">0</span>)
+    </span>
   </div>
 
-  <div style="margin-top:6px;">Shift + left click a country to open notes</div>
-  <div style="margin-top:10px; line-height:1.35;">
-    🟩 <b>Tried</b><br>
-    🟧 <b>To try</b>
+  <div style="margin-top:10px; line-height:1.5;">
+    🟩 <b>Tried</b> (<span id="triedCount2">0</span>)<br>
+    🟧 <b>To try</b> (<span id="totryCount">0</span>)<br>
+    ⬜ <b>Not tried</b> (<span id="notTriedCount">0</span>)
   </div>
 </div>
 
@@ -182,20 +184,6 @@
 
   function countryDocRef(id) {
     return doc(db, "maps", MAP_ID, "countries", id);
-  }
-
-  // ✅ Counter elements
-  const triedCountEl = document.getElementById("triedCount");
-  const totalCountEl = document.getElementById("totalCount");
-  let totalCountries = 0;
-
-  function updateTriedCounter() {
-    let tried = 0;
-    for (const id in statusById) {
-      if (statusById[id] === 1) tried++;
-    }
-    triedCountEl.textContent = String(tried);
-    totalCountEl.textContent = String(totalCountries || 0);
   }
 
   // -------------------------
@@ -325,6 +313,39 @@
   });
 
   // -------------------------
+  // Counters
+  // -------------------------
+  const triedCountEl     = document.getElementById("triedCount");   // in parentheses
+  const totalCountEl     = document.getElementById("totalCount");
+
+  const triedCountEl2    = document.getElementById("triedCount2");  // in legend
+  const totryCountEl     = document.getElementById("totryCount");
+  const notTriedCountEl  = document.getElementById("notTriedCount");
+
+  let totalCountries = 0;
+
+  function updateCounters() {
+    let tried = 0;
+    let totry = 0;
+
+    for (const id in statusById) {
+      if (statusById[id] === 1) tried++;
+      else if (statusById[id] === 2) totry++;
+    }
+
+    const notTried = Math.max(0, (totalCountries || 0) - tried - totry);
+
+    // parentheses
+    triedCountEl.textContent = String(tried);
+    totalCountEl.textContent = String(totalCountries || 0);
+
+    // legend
+    triedCountEl2.textContent = String(tried);
+    totryCountEl.textContent = String(totry);
+    notTriedCountEl.textContent = String(notTried);
+  }
+
+  // -------------------------
   // Map init (after login)
   // -------------------------
   let chart, polygonSeries;
@@ -356,8 +377,10 @@
       fillOpacity: 0.85
     });
 
+    // Default fill
     polygonSeries.mapPolygons.template.set("fill", am5.color(COLOR_DEFAULT));
 
+    // Permanent fill via adapter (reads statusById)
     polygonSeries.mapPolygons.template.adapters.add("fill", (fill, target) => {
       const id = target.dataItem?.get("id");
       const s = statusById[id] || 0;
@@ -367,21 +390,24 @@
       return am5.color(COLOR_DEFAULT);
     });
 
+    // Hover effect (no fill change)
     polygonSeries.mapPolygons.template.states.create("hover", {
       strokeWidth: 2
     });
 
-    // ✅ Once polygons exist, set totalCountries
+    // When map data is ready, set totalCountries and update counters
     polygonSeries.events.on("datavalidated", () => {
       totalCountries = polygonSeries.mapPolygons.length;
-      updateTriedCounter();
+      updateCounters();
     });
 
+    // Click handler: cycle status + save
     polygonSeries.mapPolygons.template.events.on("click", async (ev) => {
       const polygon = ev.target;
       const id = polygon.dataItem.get("id");
       const name = polygon.dataItem.dataContext.name || id;
 
+      // Shift+Click opens notes
       const oe = ev.originalEvent;
       if (oe && oe.shiftKey) {
         await openNotesEditor(id, name);
@@ -392,8 +418,9 @@
       const next = (current + 1) % 3;
       statusById[id] = next;
 
+      // Refresh fill immediately + update counters
       polygon.markDirtyKey("fill");
-      updateTriedCounter(); // ✅ update immediately
+      updateCounters();
 
       try {
         await setDoc(countryDocRef(id), { status: next }, { merge: true });
@@ -403,6 +430,7 @@
       }
     });
 
+    // Hover: show floating Notes button
     polygonSeries.mapPolygons.template.events.on("pointerover", (ev) => {
       const polygon = ev.target;
       const id = polygon.dataItem.get("id");
@@ -450,13 +478,15 @@
         notesById[id] = (data.notes || "");
       });
 
-      updateTriedCounter(); // ✅ update from server truth
-
+      // Refresh all polygon fills (adapter reads updated statusById)
       if (polygonSeries) {
         polygonSeries.mapPolygons.each((polygon) => {
           polygon.markDirtyKey("fill");
         });
       }
+
+      // Update counters too
+      updateCounters();
     });
   }
 
@@ -487,4 +517,3 @@
 
 </body>
 </html>
-
