@@ -28,6 +28,7 @@
       font-size: 14px;
       line-height: 1.4;
       z-index: 30000;
+      max-width: min(420px, 92vw);
     }
   </style>
 
@@ -66,15 +67,14 @@
 
 <div id="info">
   <div style="font-weight:700;">Giu &amp; Mel Cooking and Traveling Around the World</div>
-
   <div style="margin-top:6px;">Shift + click a country to open notes</div>
-  <div style="margin-top:10px; line-height:1.35;">
-      🟩 <b>Tried</b>
-      <span style="opacity:0.75;">(</span><span id="readCount" style="opacity:0.9;">0</span><span style="opacity:0.75;">/</span><span id="totalCount" style="opacity:0.9;">0</span><span style="opacity:0.75;">)</span>
-      <br>
-      🟧 <b>To try</b>
-    </div>
+
+  <div style="margin-top:10px; line-height:1.5;">
+    🟩 <b>Tried</b> (<span id="triedCount">0</span>/<span id="totalCount">0</span>)<br>
+    🟧 <b>To try</b> (<span id="totryCount">0</span>/<span id="totalCount2">0</span>)<br>
+    ⬜ <b>Not tried</b> (<span id="notTriedCount">0</span>/<span id="totalCount3">0</span>)
   </div>
+</div>
 
 <!-- Notes editor modal -->
 <div id="notesModal" style="
@@ -165,7 +165,6 @@
   const auth = getAuth(app);
   const provider = new GoogleAuthProvider();
 
-  // Choose a shared map id (must match your rules path)
   const MAP_ID = "cooking";
 
   // Colors
@@ -308,14 +307,15 @@
   });
 
   // -------------------------
-  // Counters
+  // Counters (x/total for each)
   // -------------------------
-  const triedCountEl     = document.getElementById("triedCount");   // in parentheses
-  const totalCountEl     = document.getElementById("totalCount");
+  const triedCountEl    = document.getElementById("triedCount");
+  const totryCountEl    = document.getElementById("totryCount");
+  const notTriedCountEl = document.getElementById("notTriedCount");
 
-  const triedCountEl2    = document.getElementById("triedCount2");  // in legend
-  const totryCountEl     = document.getElementById("totryCount");
-  const notTriedCountEl  = document.getElementById("notTriedCount");
+  const totalCountEl  = document.getElementById("totalCount");
+  const totalCountEl2 = document.getElementById("totalCount2");
+  const totalCountEl3 = document.getElementById("totalCount3");
 
   let totalCountries = 0;
 
@@ -328,16 +328,16 @@
       else if (statusById[id] === 2) totry++;
     }
 
-    const notTried = Math.max(0, (totalCountries || 0) - tried - totry);
+    const total = totalCountries || 0;
+    const notTried = Math.max(0, total - tried - totry);
 
-    // parentheses
     triedCountEl.textContent = String(tried);
-    totalCountEl.textContent = String(totalCountries || 0);
-
-    // legend
-    triedCountEl2.textContent = String(tried);
     totryCountEl.textContent = String(totry);
     notTriedCountEl.textContent = String(notTried);
+
+    totalCountEl.textContent  = String(total);
+    totalCountEl2.textContent = String(total);
+    totalCountEl3.textContent = String(total);
   }
 
   // -------------------------
@@ -372,10 +372,8 @@
       fillOpacity: 0.85
     });
 
-    // Default fill
     polygonSeries.mapPolygons.template.set("fill", am5.color(COLOR_DEFAULT));
 
-    // Permanent fill via adapter (reads statusById)
     polygonSeries.mapPolygons.template.adapters.add("fill", (fill, target) => {
       const id = target.dataItem?.get("id");
       const s = statusById[id] || 0;
@@ -385,24 +383,20 @@
       return am5.color(COLOR_DEFAULT);
     });
 
-    // Hover effect (no fill change)
     polygonSeries.mapPolygons.template.states.create("hover", {
       strokeWidth: 2
     });
 
-    // When map data is ready, set totalCountries and update counters
     polygonSeries.events.on("datavalidated", () => {
       totalCountries = polygonSeries.mapPolygons.length;
       updateCounters();
     });
 
-    // Click handler: cycle status + save
     polygonSeries.mapPolygons.template.events.on("click", async (ev) => {
       const polygon = ev.target;
       const id = polygon.dataItem.get("id");
       const name = polygon.dataItem.dataContext.name || id;
 
-      // Shift+Click opens notes
       const oe = ev.originalEvent;
       if (oe && oe.shiftKey) {
         await openNotesEditor(id, name);
@@ -413,7 +407,6 @@
       const next = (current + 1) % 3;
       statusById[id] = next;
 
-      // Refresh fill immediately + update counters
       polygon.markDirtyKey("fill");
       updateCounters();
 
@@ -425,7 +418,6 @@
       }
     });
 
-    // Hover: show floating Notes button
     polygonSeries.mapPolygons.template.events.on("pointerover", (ev) => {
       const polygon = ev.target;
       const id = polygon.dataItem.get("id");
@@ -473,14 +465,10 @@
         notesById[id] = (data.notes || "");
       });
 
-      // Refresh all polygon fills (adapter reads updated statusById)
       if (polygonSeries) {
-        polygonSeries.mapPolygons.each((polygon) => {
-          polygon.markDirtyKey("fill");
-        });
+        polygonSeries.mapPolygons.each((polygon) => polygon.markDirtyKey("fill"));
       }
 
-      // Update counters too
       updateCounters();
     });
   }
@@ -512,8 +500,3 @@
 
 </body>
 </html>
-
-
-
-
-
