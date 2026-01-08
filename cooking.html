@@ -72,9 +72,9 @@
   </div>
 
   <div style="margin-top:10px; line-height:1.5;">
-    🟩 <b>Tried</b> (<span id="triedCount">0</span>/<span id="totalCount1">0</span>)<br>
-    🟧 <b>To try</b> (<span id="totryCount">0</span>/<span id="totalCount2">0</span>)<br>
-    ⬜ <b>Not tried</b> (<span id="notTriedCount">0</span>/<span id="totalCount3">0</span>)
+    🟩 <b>Tried</b> (<span id="triedCount2">0</span>/<span id="totalCount">0</span>)<br>
+    🟧 <b>To try</b> (<span id="totryCount">0</span>/<span id="totalCount">0</span>)<br>
+    ⬜ <b>Not tried</b> (<span id="notTriedCount">0</span>/<span id="totalCount">0</span>)
   </div>
 </div>
 
@@ -312,16 +312,12 @@
   // -------------------------
   // Counters
   // -------------------------
-  const triedCountTopEl = document.getElementById("triedCountTop");
-  const totalCountTopEl = document.getElementById("totalCountTop");
+  const triedCountEl     = document.getElementById("triedCount");   // in parentheses
+  const totalCountEl     = document.getElementById("totalCount");
 
-  const triedCountEl     = document.getElementById("triedCount");
+  const triedCountEl2    = document.getElementById("triedCount2");  // in legend
   const totryCountEl     = document.getElementById("totryCount");
   const notTriedCountEl  = document.getElementById("notTriedCount");
-
-  const totalCount1El = document.getElementById("totalCount1");
-  const totalCount2El = document.getElementById("totalCount2");
-  const totalCount3El = document.getElementById("totalCount3");
 
   let totalCountries = 0;
 
@@ -334,22 +330,16 @@
       else if (statusById[id] === 2) totry++;
     }
 
-    const total = totalCountries || 0;
-    const notTried = Math.max(0, total - tried - totry);
+    const notTried = Math.max(0, (totalCountries || 0) - tried - totry);
 
-    // Top parentheses
-    triedCountTopEl.textContent = String(tried);
-    totalCountTopEl.textContent = String(total);
-
-    // Legend counts
+    // parentheses
     triedCountEl.textContent = String(tried);
+    totalCountEl.textContent = String(totalCountries || 0);
+
+    // legend
+    triedCountEl2.textContent = String(tried);
     totryCountEl.textContent = String(totry);
     notTriedCountEl.textContent = String(notTried);
-
-    // Legend totals (same total for all three)
-    totalCount1El.textContent = String(total);
-    totalCount2El.textContent = String(total);
-    totalCount3El.textContent = String(total);
   }
 
   // -------------------------
@@ -492,6 +482,7 @@
         });
       }
 
+      // Update counters too
       updateCounters();
     });
   }
