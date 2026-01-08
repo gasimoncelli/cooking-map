@@ -69,6 +69,20 @@
   <div style="font-weight:700;">Giu &amp; Mel Cooking and Traveling Around the World</div>
   <div style="margin-top:6px;">Shift + click a country to open notes</div>
 
+  <!-- NEW: random button -->
+  <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <button id="randomBtn" style="
+      cursor:pointer;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-weight: 700;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    ">🎲 Random not-tried</button>
+    <span id="randomPick" style="font-size:13px; opacity:0.9;"></span>
+  </div>
+
   <div style="margin-top:10px; line-height:1.5;">
     🟩 <b>Tried</b> (<span id="triedCount">0</span>/<span id="totalCount">0</span>)<br>
     🟧 <b>To try</b> (<span id="totryCount">0</span>/<span id="totalCount2">0</span>)<br>
@@ -129,27 +143,14 @@
 </div>
 
 <script type="module">
-  // --- Firebase imports (no installs needed) ---
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
   import {
-    getFirestore,
-    doc,
-    setDoc,
-    getDoc,
-    onSnapshot,
-    collection
+    getFirestore, doc, setDoc, getDoc, onSnapshot, collection
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
   import {
-    getAuth,
-    GoogleAuthProvider,
-    signInWithPopup,
-    signOut,
-    onAuthStateChanged
+    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-  // =========================
-  // 1) YOUR FIREBASE CONFIG
-  // =========================
   const firebaseConfig = {
     apiKey: "AIzaSyCPYOVIQ7Mc8sVGkvpnT8Wm9U6e_rcTIWw",
     authDomain: "cooking-map-5fbe2.firebaseapp.com",
@@ -159,7 +160,6 @@
     appId: "1:565526517859:web:2fdaa595523023e391c056"
   };
 
-  // App init
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
@@ -167,22 +167,18 @@
 
   const MAP_ID = "cooking";
 
-  // Colors
-  const COLOR_DEFAULT = 0xd1d1d6; // gray
-  const COLOR_TRIED   = 0x34c759; // green
-  const COLOR_TOTRY   = 0xff9500; // orange
+  const COLOR_DEFAULT = 0xd1d1d6;
+  const COLOR_TRIED   = 0x34c759;
+  const COLOR_TOTRY   = 0xff9500;
 
-  // In-memory shared state (from Firestore)
-  const statusById = {};   // { USA: 0|1|2 }
-  const notesById = {};    // { USA: "text" }
+  const statusById = {};
+  const notesById = {};
 
   function countryDocRef(id) {
     return doc(db, "maps", MAP_ID, "countries", id);
   }
 
-  // -------------------------
-  // Simple auth UI (injected)
-  // -------------------------
+  // Auth UI
   const authBar = document.createElement("div");
   authBar.style.cssText = `
     position: fixed; top: 12px; right: 12px; z-index: 20000;
@@ -206,9 +202,7 @@
   signinBtn.onclick = async () => { await signInWithPopup(auth, provider); };
   signoutBtn.onclick = async () => { await signOut(auth); };
 
-  // -------------------------
-  // Notes UI elements
-  // -------------------------
+  // Notes UI
   const floatingNotes = document.getElementById("floatingNotes");
   const floatingNotesBtn = document.getElementById("floatingNotesBtn");
 
@@ -236,10 +230,8 @@
     notesModal.style.display = "flex";
     notesArea.focus();
 
-    // Cached first
     notesArea.value = notesById[id] || "";
 
-    // Fetch latest
     try {
       const snap = await getDoc(countryDocRef(id));
       if (snap.exists()) {
@@ -306,9 +298,7 @@
     await openNotesEditor(hoverId, hoverName || hoverId);
   });
 
-  // -------------------------
-  // Counters (x/total for each)
-  // -------------------------
+  // Counters
   const triedCountEl    = document.getElementById("triedCount");
   const totryCountEl    = document.getElementById("totryCount");
   const notTriedCountEl = document.getElementById("notTriedCount");
@@ -341,8 +331,67 @@
   }
 
   // -------------------------
-  // Map init (after login)
+  // Random picker (NEW)
   // -------------------------
+  const randomBtn = document.getElementById("randomBtn");
+  const randomPickEl = document.getElementById("randomPick");
+
+  function pickRandomNotTried() {
+    if (!polygonSeries) return;
+
+    const candidates = [];
+    polygonSeries.mapPolygons.each((polygon) => {
+      const id = polygon.dataItem.get("id");
+      const s = statusById[id] || 0;
+      if (s === 0) candidates.push(polygon);
+    });
+
+    if (candidates.length === 0) {
+      randomPickEl.textContent = "✅ All countries have been tried / to-try!";
+      return;
+    }
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    const id = chosen.dataItem.get("id");
+    const name = chosen.dataItem.dataContext.name || id;
+
+    randomPickEl.textContent = `Next: ${name} (${id})`;
+
+    // Optional: rotate globe towards the country (best-effort)
+    try {
+      const geo = chosen.dataItem.get("geometry");
+      if (geo) {
+        const center = am5map.getGeoCentroid(geo);
+        if (center) {
+          chart.animate({
+            key: "rotationX",
+            to: -center.longitude,
+            duration: 800,
+            easing: am5.ease.out(am5.ease.cubic)
+          });
+          chart.animate({
+            key: "rotationY",
+            to: -center.latitude,
+            duration: 800,
+            easing: am5.ease.out(am5.ease.cubic)
+          });
+        }
+      }
+    } catch (e) {
+      // If centroid not available, just ignore rotation
+      console.warn("Rotation skipped:", e);
+    }
+
+    // Optional: briefly highlight by increasing stroke
+    chosen.states.applyAnimate("hover", { duration: 250 });
+    setTimeout(() => {
+      try { chosen.states.applyAnimate("default", { duration: 400 }); } catch {}
+    }, 800);
+  }
+
+  randomBtn.addEventListener("click", pickRandomNotTried);
+
+  // Map init
   let chart, polygonSeries;
 
   function initMap() {
@@ -448,9 +497,6 @@
     chart.appear(1000, 100);
   }
 
-  // -------------------------
-  // Live sync from Firestore
-  // -------------------------
   function startLiveSync() {
     const countriesCol = collection(db, "maps", MAP_ID, "countries");
 
@@ -473,9 +519,6 @@
     });
   }
 
-  // -------------------------
-  // Auth state: gate access
-  // -------------------------
   let started = false;
 
   onAuthStateChanged(auth, (user) => {
