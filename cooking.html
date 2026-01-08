@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cooking Map</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+
+    #chartdiv {
+      width: 100%;
+      height: 100vh;
+    }
+
+    #info {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: white;
+      padding: 12px 14px;
+      border-radius: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+  </style>
+
+  <!-- AmCharts -->
+  <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/map.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/geodata/worldLow.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
+</head>
+
+<body>
+
+<div id="chartdiv"></div>
+
+<!-- Floating Notes button that follows the mouse -->
+<div id="floatingNotes" style="
+  position: fixed;
+  display: none;
+  z-index: 10000;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+">
+  <button id="floatingNotesBtn" style="
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    background: white;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    font-size: 13px;
+    font-weight: 700;
+  ">Notes</button>
+</div>
+
+
+
+<div id="info">
+  <div style="font-weight:700;">Giu & Mel Cooking and Traveling Around the World</div>
+  <div style="margin-top:6px;">Shift + left click a country to open notes</div>
+  <div style="margin-top:10px; line-height:1.35;">
+    🟩 <b>Tried</b><br>
+    🟧 <b>To try</b>
+  </div>
+</div>
+
+<!-- Notes editor modal -->
+<div id="notesModal" style="
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  z-index: 9999;
+">
+  <div style="
+    width: min(700px, 92vw);
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    padding: 14px;
+  ">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div id="notesTitle" style="font-weight:700; font-size:16px;">Notes</div>
+      <button id="closeNotes" style="
+  cursor:pointer;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-weight: 700;
+">✕</button>
+    </div>
+
+    <textarea id="notesArea" style="
+      width: 100%;
+      height: 320px;
+      margin-top: 10px;
+      padding: 10px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      font-size: 14px;
+      line-height: 1.4;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      resize: vertical;
+    " placeholder="Write your notes here..."></textarea>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+      <div id="saveStatus" style="opacity:0.7; font-size:12px;"></div>
+      <div style="display:flex; gap:8px;">
+        <button id="deleteNotes" style="cursor:pointer;">Delete</button>
+        <button id="saveNotes" style="cursor:pointer; font-weight:700;">Save & Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script type="module">
+  // --- Firebase imports (no installs needed) ---
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+  import {
+    getFirestore,
+    doc,
+    setDoc,
+    getDoc,
+    onSnapshot,
+    collection
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import {
+    getAuth,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signOut,
+    onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+  // =========================
+  // 1) PASTE YOUR CONFIG HERE
+  // =========================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCPYOVIQ7Mc8sVGkvpnT8Wm9U6e_rcTIWw",
+  authDomain: "cooking-map-5fbe2.firebaseapp.com",
+  projectId: "cooking-map-5fbe2",
+  storageBucket: "cooking-map-5fbe2.appspot.com",
+  messagingSenderId: "565526517859",
+  appId: "1:565526517859:web:2fdaa595523023e391c056"
+};
+
+  // App init
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
+  // Choose a shared map id (must match your rules path)
+  const MAP_ID = "cooking";
+
+  // -------------------------
+  // Simple auth UI (injected)
+  // -------------------------
+  const authBar = document.createElement("div");
+  authBar.style.cssText = `
+    position: fixed; top: 12px; right: 12px; z-index: 20000;
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(255,255,255,0.95);
+    padding: 10px 12px; border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  `;
+
+  authBar.innerHTML = `
+    <span id="whoami" style="font-size:13px; opacity:0.85;"></span>
+    <button id="signin" style="cursor:pointer; font-weight:700;">Sign in</button>
+    <button id="signout" style="cursor:pointer; display:none;">Sign out</button>
+  `;
+  document.body.appendChild(authBar);
+
+  const whoami = authBar.querySelector("#whoami");
+  const signinBtn = authBar.querySelector("#signin");
+  const signoutBtn = authBar.querySelector("#signout");
+
+  signinBtn.onclick = async () => {
+    await signInWithPopup(auth, provider);
+  };
+  signoutBtn.onclick = async () => {
+    await signOut(auth);
+  };
+
+  // -------------------------
+  // Your existing UI elements
+  // -------------------------
+  const floatingNotes = document.getElementById("floatingNotes");
+  const floatingNotesBtn = document.getElementById("floatingNotesBtn");
+
+  const notesModal = document.getElementById("notesModal");
+  const notesTitle = document.getElementById("notesTitle");
+  const notesArea  = document.getElementById("notesArea");
+  const saveNotes  = document.getElementById("saveNotes");
+  const deleteNotes= document.getElementById("deleteNotes");
+  const closeNotes = document.getElementById("closeNotes");
+  const saveStatus = document.getElementById("saveStatus");
+
+  let hoverId = null;
+let hoverName = null;
+
+let editId = null;
+let editName = null;
+
+// Colors
+const COLOR_DEFAULT = 0xd1d1d6; // gray
+const COLOR_TRIED   = 0x34c759; // green
+const COLOR_TOTRY   = 0xff9500; // orange
+
+
+
+  // In-memory shared state (from Firestore)
+  const statusById = {};   // { USA: 0|1|2 }
+  const notesById = {};
+
+  function countryDocRef(id) {
+    return doc(db, "maps", MAP_ID, "countries", id);
+  }
+
+async function openNotesEditor(id, name) {
+  editId = id;
+editName = name;
+
+
+  notesTitle.textContent = `Notes — ${name} (${id})`;
+  saveStatus.textContent = "";
+
+  // Show modal immediately (fast UI)
+  notesModal.style.display = "flex";
+  notesArea.focus();
+
+  // Start with cached value (if any)
+  notesArea.value = notesById[id] || "";
+
+  // Then fetch the latest from Firestore (source of truth)
+  try {
+    const snap = await getDoc(countryDocRef(id));
+    if (snap.exists()) {
+      const data = snap.data();
+      const latest = (data.notes || "");
+      notesById[id] = latest;      // update cache
+      notesArea.value = latest;    // update UI
+    } else {
+      notesById[id] = "";
+      notesArea.value = "";
+    }
+  } catch (e) {
+    console.error("Failed to load notes:", e);
+  }
+}
+
+  function closeNotesEditor() {
+  notesModal.style.display = "none";
+  editId = null;
+  editName = null;
+}
+
+  closeNotes.addEventListener("click", closeNotesEditor);
+  notesModal.addEventListener("click", (e) => {
+    if (e.target === notesModal) closeNotesEditor();
+  });
+
+  // Save notes to Firestore
+saveNotes.addEventListener("click", async () => {
+  if (!editId) return;
+
+  const text = notesArea.value;
+
+  saveStatus.textContent = "Saving…";
+  saveNotes.disabled = true;
+
+  try {
+    await setDoc(countryDocRef(editId), { notes: text }, { merge: true });
+    notesById[editId] = text;
+
+    saveStatus.textContent = "Saved ✅";
+    closeNotesEditor(); // Save & Close
+  } catch (e) {
+    console.error("Save failed:", e);
+    saveStatus.textContent = "Save failed ❌";
+  } finally {
+    saveNotes.disabled = false;
+  }
+});
+
+
+
+  // Delete notes in Firestore (set to empty string)
+  deleteNotes.addEventListener("click", async () => {
+    if (!editId) return;
+if (!confirm(`Delete notes for ${editName} (${editId})?`)) return;
+await setDoc(countryDocRef(editId), { notes: "" }, { merge: true });
+notesById[editId] = "";
+notesArea.value = "";
+  });
+
+  floatingNotesBtn.addEventListener("click", async () => {
+  if (!hoverId) return;
+await openNotesEditor(hoverId, hoverName || hoverId);
+  });
+
+  // -------------------------
+  // Map init (after login)
+  // -------------------------
+  let chart, polygonSeries;
+
+  function applyStatusToPolygon(polygon) {
+    const id = polygon.dataItem.get("id");
+    const s = statusById[id] || 0;
+
+    let color = COLOR_DEFAULT;
+    if (s === 1) color = COLOR_TRIED;
+    else if (s === 2) color = COLOR_TOTRY;
+
+    polygon.set("fill", am5.color(color));
+  }
+
+
+
+
+  function initMap() {
+    // amCharts setup
+    const root = am5.Root.new("chartdiv");
+    root.setThemes([am5themes_Animated.new(root)]);
+
+    chart = root.container.children.push(
+      am5map.MapChart.new(root, {
+        projection: am5map.geoOrthographic(),
+        panX: "rotateX",
+        panY: "rotateY"
+      })
+    );
+
+    polygonSeries = chart.series.push(
+      am5map.MapPolygonSeries.new(root, {
+        geoJSON: am5geodata_worldLow
+      })
+    );
+
+    polygonSeries.mapPolygons.template.setAll({
+      tooltipText: "{name}",
+      interactive: true,
+      strokeOpacity: 1,
+      stroke: am5.color(0x666666),
+      strokeWidth: 0.6,
+      fillOpacity: 0.85
+    });
+
+    polygonSeries.mapPolygons.template.set("fill", am5.color(0xd1d1d6));
+
+    polygonSeries.mapPolygons.template.states.create("hover", {
+      fill: am5.color(0xbdbdc2)
+    });
+
+    polygonSeries.mapPolygons.template.states.create("tried", {
+      fill: am5.color(0x34c759) // green
+    });
+
+    polygonSeries.mapPolygons.template.states.create("totry", {
+      fill: am5.color(0xff9500) // orange
+    });
+
+
+polygonSeries.events.on("datavalidated", function () {
+  polygonSeries.mapPolygons.each(function (polygon) {
+    applyStatusToPolygon(polygon);
+  });
+});
+
+
+    polygonSeries.mapPolygons.template.events.on("click", async function (ev) {
+  const polygon = ev.target;
+  const id = polygon.dataItem.get("id");
+  const name = polygon.dataItem.dataContext.name || id;
+
+  // ✅ Shift+Click opens the notes editor (and does NOT toggle read)
+  const oe = ev.originalEvent;
+  if (oe && oe.shiftKey) {
+    await openNotesEditor(id, name);
+    return;
+  }
+
+  // Normal click cycles status: 0 -> 1 (green) -> 2 (orange) -> 0 (gray)
+const current = statusById[id] || 0;
+const next = (current + 1) % 3;
+
+// optimistic UI + cache
+statusById[id] = next;
+applyStatusToPolygon(polygon);
+
+// persist
+await setDoc(countryDocRef(id), { status: next }, { merge: true });
+
+});
+
+    // Hover: show floating Notes button
+    polygonSeries.mapPolygons.template.events.on("pointerover", function (ev) {
+      const polygon = ev.target;
+      const id = polygon.dataItem.get("id");
+      const name = polygon.dataItem.dataContext.name || id;
+
+      hoverId = id;
+      hoverName = name;
+
+      // Change button label depending on whether notes exist
+      const hasNotes = !!(notesById[id] && notesById[id].trim());
+      floatingNotesBtn.textContent = hasNotes ? "Edit notes ✎" : "Add notes +";
+
+      floatingNotes.style.display = "block";
+    });
+
+    polygonSeries.mapPolygons.template.events.on("pointermove", function (ev) {
+      const oe = ev.originalEvent;
+      if (oe && typeof oe.clientX === "number") {
+        floatingNotes.style.left = oe.clientX + "px";
+        floatingNotes.style.top  = oe.clientY + "px";
+      }
+    });
+
+    polygonSeries.mapPolygons.template.events.on("pointerout", function (ev) {
+      const polygon = ev.target;
+
+      hoverId = null;
+      hoverName = null;
+      floatingNotes.style.display = "none";
+
+      // ✅ re-apply saved status color after hover ends
+      applyStatusToPolygon(polygon);
+    });
+
+    // ✅ show the chart
+      chart.appear(1000, 100);
+    } // ✅ CLOSE initMap()
+
+
+
+  // -------------------------
+  // Live sync from Firestore
+  // -------------------------
+  function startLiveSync() {
+    const countriesCol = collection(db, "maps", MAP_ID, "countries");
+
+    // Listen for any changes (from you or friends)
+    onSnapshot(countriesCol, (snap) => {
+      // Reset + rebuild state from snapshot
+      for (const k in statusById) delete statusById[k];
+      for (const k in notesById) delete notesById[k];
+
+      snap.forEach((docSnap) => {
+        const id = docSnap.id;
+        const data = docSnap.data();
+        statusById[id] = Number(data.status || 0);
+        notesById[id] = (data.notes || "");
+      });
+
+      // If the map exists, update polygon active states
+      if (polygonSeries) {
+  polygonSeries.mapPolygons.each((polygon) => {
+    applyStatusToPolygon(polygon);
+  });
+}
+
+    });
+  }
+
+  // -------------------------
+  // Auth state: gate access
+  // -------------------------
+  let started = false;
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      whoami.textContent = "Friends only";
+      signinBtn.style.display = "inline-block";
+      signoutBtn.style.display = "none";
+      return;
+    }
+
+    whoami.textContent = user.email || "Signed in";
+    signinBtn.style.display = "none";
+    signoutBtn.style.display = "inline-block";
+
+    // Start app once per session
+    if (!started) {
+      started = true;
+      initMap();
+      startLiveSync();
+    }
+  });
+
+</script>
+
+
+</body>
+</html>
