@@ -69,7 +69,6 @@
   <div style="font-weight:700;">Giu &amp; Mel Cooking and Traveling Around the World</div>
   <div style="margin-top:6px;">Shift + click a country to open notes</div>
 
-  <!-- NEW: random button -->
   <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
     <button id="randomBtn" style="
       cursor:pointer;
@@ -170,6 +169,7 @@
   const COLOR_DEFAULT = 0xd1d1d6;
   const COLOR_TRIED   = 0x34c759;
   const COLOR_TOTRY   = 0xff9500;
+  const COLOR_FLASH   = 0x007aff; // iOS blue
 
   const statusById = {};
   const notesById = {};
@@ -330,9 +330,54 @@
     totalCountEl3.textContent = String(total);
   }
 
+  // Map init
+  let chart, polygonSeries;
+
   // -------------------------
-  // Random picker (NEW)
+  // Flash blue helper (NEW)
   // -------------------------
+  function flashPolygonBlue(polygon) {
+    if (!polygon) return;
+
+    // stop any previous flashing
+    if (polygon.__flashTimer) {
+      clearInterval(polygon.__flashTimer);
+      polygon.__flashTimer = null;
+    }
+    if (polygon.__flashTimeout) {
+      clearTimeout(polygon.__flashTimeout);
+      polygon.__flashTimeout = null;
+    }
+
+    let on = false;
+    let ticks = 0;
+    const maxTicks = 8; // 8 toggles = ~4 flashes
+
+    const toggle = () => {
+      on = !on;
+      ticks += 1;
+
+      // switch states
+      polygon.states.applyAnimate(on ? "flash" : "default", { duration: 120 });
+
+      if (ticks >= maxTicks) {
+        clearInterval(polygon.__flashTimer);
+        polygon.__flashTimer = null;
+
+        // ensure it ends in default state
+        polygon.__flashTimeout = setTimeout(() => {
+          try { polygon.states.applyAnimate("default", { duration: 200 }); } catch {}
+          polygon.__flashTimeout = null;
+        }, 160);
+      }
+    };
+
+    // start immediately
+    toggle();
+    polygon.__flashTimer = setInterval(toggle, 180);
+  }
+
+  // Random picker
   const randomBtn = document.getElementById("randomBtn");
   const randomPickEl = document.getElementById("randomPick");
 
@@ -357,7 +402,7 @@
 
     randomPickEl.textContent = `Next: ${name} (${id})`;
 
-    // Optional: rotate globe towards the country (best-effort)
+    // Rotate globe towards the country (best-effort)
     try {
       const geo = chosen.dataItem.get("geometry");
       if (geo) {
@@ -378,21 +423,14 @@
         }
       }
     } catch (e) {
-      // If centroid not available, just ignore rotation
       console.warn("Rotation skipped:", e);
     }
 
-    // Optional: briefly highlight by increasing stroke
-    chosen.states.applyAnimate("hover", { duration: 250 });
-    setTimeout(() => {
-      try { chosen.states.applyAnimate("default", { duration: 400 }); } catch {}
-    }, 800);
+    // Flash blue (NEW)
+    flashPolygonBlue(chosen);
   }
 
   randomBtn.addEventListener("click", pickRandomNotTried);
-
-  // Map init
-  let chart, polygonSeries;
 
   function initMap() {
     const root = am5.Root.new("chartdiv");
@@ -423,6 +461,7 @@
 
     polygonSeries.mapPolygons.template.set("fill", am5.color(COLOR_DEFAULT));
 
+    // Permanent fill based on status
     polygonSeries.mapPolygons.template.adapters.add("fill", (fill, target) => {
       const id = target.dataItem?.get("id");
       const s = statusById[id] || 0;
@@ -432,8 +471,15 @@
       return am5.color(COLOR_DEFAULT);
     });
 
+    // Hover effect
     polygonSeries.mapPolygons.template.states.create("hover", {
       strokeWidth: 2
+    });
+
+    // Flash state (NEW): blue fill + thicker stroke
+    polygonSeries.mapPolygons.template.states.create("flash", {
+      fill: am5.color(COLOR_FLASH),
+      strokeWidth: 2.5
     });
 
     polygonSeries.events.on("datavalidated", () => {
@@ -543,4 +589,3 @@
 
 </body>
 </html>
-
