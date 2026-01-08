@@ -363,18 +363,23 @@ await openNotesEditor(hoverId, hoverName || hoverId);
       fillOpacity: 0.85
     });
 
+    // Base fill (used when status = 0)
+    polygonSeries.mapPolygons.template.set("fill", am5.color(COLOR_DEFAULT));
+
+    // IMPORTANT: Adapter keeps your saved color "permanent"
+    polygonSeries.mapPolygons.template.adapters.add("fill", (fill, target) => {
+    const id = target.dataItem?.get("id");
+    const s = statusById[id] || 0;
+
+    if (s === 1) return am5.color(COLOR_TRIED);
+    if (s === 2) return am5.color(COLOR_TOTRY);
+    return am5.color(COLOR_DEFAULT);
+    });
+
     polygonSeries.mapPolygons.template.set("fill", am5.color(0xd1d1d6));
 
     polygonSeries.mapPolygons.template.states.create("hover", {
-      fill: am5.color(0xbdbdc2)
-    });
-
-    polygonSeries.mapPolygons.template.states.create("tried", {
-      fill: am5.color(0x34c759) // green
-    });
-
-    polygonSeries.mapPolygons.template.states.create("totry", {
-      fill: am5.color(0xff9500) // orange
+      strokeWidth: 2
     });
 
 
@@ -400,13 +405,14 @@ polygonSeries.events.on("datavalidated", function () {
   // Normal click cycles status: 0 -> 1 (green) -> 2 (orange) -> 0 (gray)
 const current = statusById[id] || 0;
 const next = (current + 1) % 3;
-
-// optimistic UI + cache
 statusById[id] = next;
-applyStatusToPolygon(polygon);
 
-// persist
+// Persist
 await setDoc(countryDocRef(id), { status: next }, { merge: true });
+
+// Force redraw (adapter will now return new color)
+polygon.set("fill", polygon.get("fill"));
+
 
 });
 
@@ -441,8 +447,6 @@ await setDoc(countryDocRef(id), { status: next }, { merge: true });
       hoverName = null;
       floatingNotes.style.display = "none";
 
-      // ✅ re-apply saved status color after hover ends
-      applyStatusToPolygon(polygon);
     });
 
     // ✅ show the chart
