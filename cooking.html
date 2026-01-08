@@ -143,12 +143,8 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-  import {
-    getFirestore, doc, setDoc, getDoc, onSnapshot, collection
-  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-  import {
-    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
-  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCPYOVIQ7Mc8sVGkvpnT8Wm9U6e_rcTIWw",
@@ -169,7 +165,7 @@
   const COLOR_DEFAULT = 0xd1d1d6;
   const COLOR_TRIED   = 0x34c759;
   const COLOR_TOTRY   = 0xff9500;
-  const COLOR_FLASH   = 0x007aff; // iOS blue
+  const COLOR_FLASH   = 0xffd60a; // YELLOW
 
   const statusById = {};
   const notesById = {};
@@ -333,10 +329,8 @@
   // Map init
   let chart, polygonSeries;
 
-  // -------------------------
-  // Flash blue helper (NEW)
-  // -------------------------
-  function flashPolygonBlue(polygon) {
+  // ------------- Flash helper (YELLOW, 5s) -------------
+  function flashPolygonYellow5s(polygon) {
     if (!polygon) return;
 
     // stop any previous flashing
@@ -349,32 +343,29 @@
       polygon.__flashTimeout = null;
     }
 
+    const durationMs = 5000;
+    const intervalMs = 200;
+    const start = Date.now();
     let on = false;
-    let ticks = 0;
-    const maxTicks = 8; // 8 toggles = ~4 flashes
 
     const toggle = () => {
       on = !on;
-      ticks += 1;
+      polygon.states.applyAnimate(on ? "flash" : "default", { duration: 100 });
 
-      // switch states
-      polygon.states.applyAnimate(on ? "flash" : "default", { duration: 120 });
-
-      if (ticks >= maxTicks) {
+      if (Date.now() - start >= durationMs) {
         clearInterval(polygon.__flashTimer);
         polygon.__flashTimer = null;
 
-        // ensure it ends in default state
+        // end in default (which returns to adapter-based fill: grey/green/orange)
         polygon.__flashTimeout = setTimeout(() => {
-          try { polygon.states.applyAnimate("default", { duration: 200 }); } catch {}
+          try { polygon.states.applyAnimate("default", { duration: 150 }); } catch {}
           polygon.__flashTimeout = null;
-        }, 160);
+        }, 120);
       }
     };
 
-    // start immediately
-    toggle();
-    polygon.__flashTimer = setInterval(toggle, 180);
+    toggle(); // start immediately
+    polygon.__flashTimer = setInterval(toggle, intervalMs);
   }
 
   // Random picker
@@ -382,7 +373,7 @@
   const randomPickEl = document.getElementById("randomPick");
 
   function pickRandomNotTried() {
-    if (!polygonSeries) return;
+    if (!polygonSeries || !chart) return;
 
     const candidates = [];
     polygonSeries.mapPolygons.each((polygon) => {
@@ -426,8 +417,8 @@
       console.warn("Rotation skipped:", e);
     }
 
-    // Flash blue (NEW)
-    flashPolygonBlue(chosen);
+    // Flash YELLOW for 5 seconds
+    flashPolygonYellow5s(chosen);
   }
 
   randomBtn.addEventListener("click", pickRandomNotTried);
@@ -476,7 +467,7 @@
       strokeWidth: 2
     });
 
-    // Flash state (NEW): blue fill + thicker stroke
+    // Flash state (YELLOW)
     polygonSeries.mapPolygons.template.states.create("flash", {
       fill: am5.color(COLOR_FLASH),
       strokeWidth: 2.5
