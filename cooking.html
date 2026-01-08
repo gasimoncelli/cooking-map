@@ -27,6 +27,7 @@
       box-shadow: 0 6px 18px rgba(0,0,0,0.15);
       font-size: 14px;
       line-height: 1.4;
+      z-index: 30000;
     }
   </style>
 
@@ -63,10 +64,8 @@
   ">Notes</button>
 </div>
 
-
-
 <div id="info">
-  <div style="font-weight:700;">Giu & Mel Cooking and Traveling Around the World</div>
+  <div style="font-weight:700;">Giu &amp; Mel Cooking and Traveling Around the World</div>
   <div style="margin-top:6px;">Shift + left click a country to open notes</div>
   <div style="margin-top:10px; line-height:1.35;">
     🟩 <b>Tried</b><br>
@@ -94,13 +93,13 @@
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
       <div id="notesTitle" style="font-weight:700; font-size:16px;">Notes</div>
       <button id="closeNotes" style="
-  cursor:pointer;
-  border: 1px solid #ddd;
-  background: white;
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-weight: 700;
-">✕</button>
+        cursor:pointer;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-weight: 700;
+      ">✕</button>
     </div>
 
     <textarea id="notesArea" style="
@@ -120,12 +119,11 @@
       <div id="saveStatus" style="opacity:0.7; font-size:12px;"></div>
       <div style="display:flex; gap:8px;">
         <button id="deleteNotes" style="cursor:pointer;">Delete</button>
-        <button id="saveNotes" style="cursor:pointer; font-weight:700;">Save & Close</button>
+        <button id="saveNotes" style="cursor:pointer; font-weight:700;">Save &amp; Close</button>
       </div>
     </div>
   </div>
 </div>
-
 
 <script type="module">
   // --- Firebase imports (no installs needed) ---
@@ -147,17 +145,16 @@
   } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
   // =========================
-  // 1) PASTE YOUR CONFIG HERE
+  // 1) YOUR FIREBASE CONFIG
   // =========================
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCPYOVIQ7Mc8sVGkvpnT8Wm9U6e_rcTIWw",
-  authDomain: "cooking-map-5fbe2.firebaseapp.com",
-  projectId: "cooking-map-5fbe2",
-  storageBucket: "cooking-map-5fbe2.appspot.com",
-  messagingSenderId: "565526517859",
-  appId: "1:565526517859:web:2fdaa595523023e391c056"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyCPYOVIQ7Mc8sVGkvpnT8Wm9U6e_rcTIWw",
+    authDomain: "cooking-map-5fbe2.firebaseapp.com",
+    projectId: "cooking-map-5fbe2",
+    storageBucket: "cooking-map-5fbe2.appspot.com",
+    messagingSenderId: "565526517859",
+    appId: "1:565526517859:web:2fdaa595523023e391c056"
+  };
 
   // App init
   const app = initializeApp(firebaseConfig);
@@ -167,6 +164,19 @@ const firebaseConfig = {
 
   // Choose a shared map id (must match your rules path)
   const MAP_ID = "cooking";
+
+  // Colors
+  const COLOR_DEFAULT = 0xd1d1d6; // gray
+  const COLOR_TRIED   = 0x34c759; // green
+  const COLOR_TOTRY   = 0xff9500; // orange
+
+  // In-memory shared state (from Firestore)
+  const statusById = {};   // { USA: 0|1|2 }
+  const notesById = {};    // { USA: "text" }
+
+  function countryDocRef(id) {
+    return doc(db, "maps", MAP_ID, "countries", id);
+  }
 
   // -------------------------
   // Simple auth UI (injected)
@@ -180,7 +190,6 @@ const firebaseConfig = {
     box-shadow: 0 6px 18px rgba(0,0,0,0.15);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
   `;
-
   authBar.innerHTML = `
     <span id="whoami" style="font-size:13px; opacity:0.85;"></span>
     <button id="signin" style="cursor:pointer; font-weight:700;">Sign in</button>
@@ -192,15 +201,11 @@ const firebaseConfig = {
   const signinBtn = authBar.querySelector("#signin");
   const signoutBtn = authBar.querySelector("#signout");
 
-  signinBtn.onclick = async () => {
-    await signInWithPopup(auth, provider);
-  };
-  signoutBtn.onclick = async () => {
-    await signOut(auth);
-  };
+  signinBtn.onclick = async () => { await signInWithPopup(auth, provider); };
+  signoutBtn.onclick = async () => { await signOut(auth); };
 
   // -------------------------
-  // Your existing UI elements
+  // Notes UI elements
   // -------------------------
   const floatingNotes = document.getElementById("floatingNotes");
   const floatingNotesBtn = document.getElementById("floatingNotesBtn");
@@ -214,126 +219,95 @@ const firebaseConfig = {
   const saveStatus = document.getElementById("saveStatus");
 
   let hoverId = null;
-let hoverName = null;
+  let hoverName = null;
 
-let editId = null;
-let editName = null;
+  let editId = null;
+  let editName = null;
 
-// Colors
-const COLOR_DEFAULT = 0xd1d1d6; // gray
-const COLOR_TRIED   = 0x34c759; // green
-const COLOR_TOTRY   = 0xff9500; // orange
+  async function openNotesEditor(id, name) {
+    editId = id;
+    editName = name;
 
+    notesTitle.textContent = `Notes — ${name} (${id})`;
+    saveStatus.textContent = "";
 
+    notesModal.style.display = "flex";
+    notesArea.focus();
 
-  // In-memory shared state (from Firestore)
-  const statusById = {};   // { USA: 0|1|2 }
-  const notesById = {};
+    // Cached first
+    notesArea.value = notesById[id] || "";
 
-  function countryDocRef(id) {
-    return doc(db, "maps", MAP_ID, "countries", id);
-  }
-
-async function openNotesEditor(id, name) {
-  editId = id;
-editName = name;
-
-
-  notesTitle.textContent = `Notes — ${name} (${id})`;
-  saveStatus.textContent = "";
-
-  // Show modal immediately (fast UI)
-  notesModal.style.display = "flex";
-  notesArea.focus();
-
-  // Start with cached value (if any)
-  notesArea.value = notesById[id] || "";
-
-  // Then fetch the latest from Firestore (source of truth)
-  try {
-    const snap = await getDoc(countryDocRef(id));
-    if (snap.exists()) {
-      const data = snap.data();
-      const latest = (data.notes || "");
-      notesById[id] = latest;      // update cache
-      notesArea.value = latest;    // update UI
-    } else {
-      notesById[id] = "";
-      notesArea.value = "";
+    // Fetch latest
+    try {
+      const snap = await getDoc(countryDocRef(id));
+      if (snap.exists()) {
+        const data = snap.data();
+        const latest = (data.notes || "");
+        notesById[id] = latest;
+        notesArea.value = latest;
+      } else {
+        notesById[id] = "";
+        notesArea.value = "";
+      }
+    } catch (e) {
+      console.error("Failed to load notes:", e);
     }
-  } catch (e) {
-    console.error("Failed to load notes:", e);
   }
-}
 
   function closeNotesEditor() {
-  notesModal.style.display = "none";
-  editId = null;
-  editName = null;
-}
+    notesModal.style.display = "none";
+    editId = null;
+    editName = null;
+  }
 
   closeNotes.addEventListener("click", closeNotesEditor);
   notesModal.addEventListener("click", (e) => {
     if (e.target === notesModal) closeNotesEditor();
   });
 
-  // Save notes to Firestore
-saveNotes.addEventListener("click", async () => {
-  if (!editId) return;
+  saveNotes.addEventListener("click", async () => {
+    if (!editId) return;
 
-  const text = notesArea.value;
+    const text = notesArea.value;
+    saveStatus.textContent = "Saving…";
+    saveNotes.disabled = true;
 
-  saveStatus.textContent = "Saving…";
-  saveNotes.disabled = true;
+    try {
+      await setDoc(countryDocRef(editId), { notes: text }, { merge: true });
+      notesById[editId] = text;
+      saveStatus.textContent = "Saved ✅";
+      closeNotesEditor();
+    } catch (e) {
+      console.error("Save failed:", e);
+      saveStatus.textContent = "Save failed ❌";
+    } finally {
+      saveNotes.disabled = false;
+    }
+  });
 
-  try {
-    await setDoc(countryDocRef(editId), { notes: text }, { merge: true });
-    notesById[editId] = text;
-
-    saveStatus.textContent = "Saved ✅";
-    closeNotesEditor(); // Save & Close
-  } catch (e) {
-    console.error("Save failed:", e);
-    saveStatus.textContent = "Save failed ❌";
-  } finally {
-    saveNotes.disabled = false;
-  }
-});
-
-
-
-  // Delete notes in Firestore (set to empty string)
   deleteNotes.addEventListener("click", async () => {
     if (!editId) return;
-if (!confirm(`Delete notes for ${editName} (${editId})?`)) return;
-await setDoc(countryDocRef(editId), { notes: "" }, { merge: true });
-notesById[editId] = "";
-notesArea.value = "";
+    if (!confirm(`Delete notes for ${editName} (${editId})?`)) return;
+
+    try {
+      await setDoc(countryDocRef(editId), { notes: "" }, { merge: true });
+      notesById[editId] = "";
+      notesArea.value = "";
+    } catch (e) {
+      console.error("Delete failed:", e);
+      alert("Delete failed (permissions?)");
+    }
   });
 
   floatingNotesBtn.addEventListener("click", async () => {
-  if (!hoverId) return;
-await openNotesEditor(hoverId, hoverName || hoverId);
+    if (!hoverId) return;
+    await openNotesEditor(hoverId, hoverName || hoverId);
   });
 
   // -------------------------
   // Map init (after login)
   // -------------------------
   let chart, polygonSeries;
-
-  function applyStatusToPolygon(polygon) {
-    const id = polygon.dataItem.get("id");
-    const s = statusById[id] || 0;
-
-    let color = COLOR_DEFAULT;
-    if (s === 1) color = COLOR_TRIED;
-    else if (s === 2) color = COLOR_TOTRY;
-
-    polygon.set("fill", am5.color(color));
-  }
-
-
-
 
   function initMap() {
     // amCharts setup
@@ -354,6 +328,7 @@ await openNotesEditor(hoverId, hoverName || hoverId);
       })
     );
 
+    // Basic polygon styling
     polygonSeries.mapPolygons.template.setAll({
       tooltipText: "{name}",
       interactive: true,
@@ -363,61 +338,54 @@ await openNotesEditor(hoverId, hoverName || hoverId);
       fillOpacity: 0.85
     });
 
-    // Base fill (used when status = 0)
+    // IMPORTANT: Set default fill ONCE
     polygonSeries.mapPolygons.template.set("fill", am5.color(COLOR_DEFAULT));
 
-    // IMPORTANT: Adapter keeps your saved color "permanent"
+    // IMPORTANT: Adapter makes fill "permanent" based on statusById
     polygonSeries.mapPolygons.template.adapters.add("fill", (fill, target) => {
-    const id = target.dataItem?.get("id");
-    const s = statusById[id] || 0;
+      const id = target.dataItem?.get("id");
+      const s = statusById[id] || 0;
 
-    if (s === 1) return am5.color(COLOR_TRIED);
-    if (s === 2) return am5.color(COLOR_TOTRY);
-    return am5.color(COLOR_DEFAULT);
+      if (s === 1) return am5.color(COLOR_TRIED);
+      if (s === 2) return am5.color(COLOR_TOTRY);
+      return am5.color(COLOR_DEFAULT);
     });
 
-    polygonSeries.mapPolygons.template.set("fill", am5.color(0xd1d1d6));
-
+    // Hover effect WITHOUT changing fill (so it won't override saved colors)
     polygonSeries.mapPolygons.template.states.create("hover", {
       strokeWidth: 2
     });
 
+    // Click handler: cycle status + save
+    polygonSeries.mapPolygons.template.events.on("click", async (ev) => {
+      const polygon = ev.target;
+      const id = polygon.dataItem.get("id");
+      const name = polygon.dataItem.dataContext.name || id;
 
-polygonSeries.events.on("datavalidated", function () {
-  polygonSeries.mapPolygons.each(function (polygon) {
-    applyStatusToPolygon(polygon);
-  });
-});
+      // Shift+Click opens notes
+      const oe = ev.originalEvent;
+      if (oe && oe.shiftKey) {
+        await openNotesEditor(id, name);
+        return;
+      }
 
+      const current = statusById[id] || 0;
+      const next = (current + 1) % 3;
+      statusById[id] = next;
 
-    polygonSeries.mapPolygons.template.events.on("click", async function (ev) {
-  const polygon = ev.target;
-  const id = polygon.dataItem.get("id");
-  const name = polygon.dataItem.dataContext.name || id;
+      // Force a refresh so adapter re-runs immediately
+      polygon.markDirtyKey("fill");
 
-  // ✅ Shift+Click opens the notes editor (and does NOT toggle read)
-  const oe = ev.originalEvent;
-  if (oe && oe.shiftKey) {
-    await openNotesEditor(id, name);
-    return;
-  }
-
-  // Normal click cycles status: 0 -> 1 (green) -> 2 (orange) -> 0 (gray)
-const current = statusById[id] || 0;
-const next = (current + 1) % 3;
-statusById[id] = next;
-
-// Persist
-await setDoc(countryDocRef(id), { status: next }, { merge: true });
-
-// Force redraw (adapter will now return new color)
-polygon.set("fill", polygon.get("fill"));
-
-
-});
+      try {
+        await setDoc(countryDocRef(id), { status: next }, { merge: true });
+      } catch (e) {
+        console.error("Status save failed:", e);
+        alert("Could not save status (permissions?)");
+      }
+    });
 
     // Hover: show floating Notes button
-    polygonSeries.mapPolygons.template.events.on("pointerover", function (ev) {
+    polygonSeries.mapPolygons.template.events.on("pointerover", (ev) => {
       const polygon = ev.target;
       const id = polygon.dataItem.get("id");
       const name = polygon.dataItem.dataContext.name || id;
@@ -425,14 +393,12 @@ polygon.set("fill", polygon.get("fill"));
       hoverId = id;
       hoverName = name;
 
-      // Change button label depending on whether notes exist
       const hasNotes = !!(notesById[id] && notesById[id].trim());
       floatingNotesBtn.textContent = hasNotes ? "Edit notes ✎" : "Add notes +";
-
       floatingNotes.style.display = "block";
     });
 
-    polygonSeries.mapPolygons.template.events.on("pointermove", function (ev) {
+    polygonSeries.mapPolygons.template.events.on("pointermove", (ev) => {
       const oe = ev.originalEvent;
       if (oe && typeof oe.clientX === "number") {
         floatingNotes.style.left = oe.clientX + "px";
@@ -440,20 +406,14 @@ polygon.set("fill", polygon.get("fill"));
       }
     });
 
-    polygonSeries.mapPolygons.template.events.on("pointerout", function (ev) {
-      const polygon = ev.target;
-
+    polygonSeries.mapPolygons.template.events.on("pointerout", () => {
       hoverId = null;
       hoverName = null;
       floatingNotes.style.display = "none";
-
     });
 
-    // ✅ show the chart
-      chart.appear(1000, 100);
-    } // ✅ CLOSE initMap()
-
-
+    chart.appear(1000, 100);
+  }
 
   // -------------------------
   // Live sync from Firestore
@@ -461,7 +421,6 @@ polygon.set("fill", polygon.get("fill"));
   function startLiveSync() {
     const countriesCol = collection(db, "maps", MAP_ID, "countries");
 
-    // Listen for any changes (from you or friends)
     onSnapshot(countriesCol, (snap) => {
       // Reset + rebuild state from snapshot
       for (const k in statusById) delete statusById[k];
@@ -474,13 +433,12 @@ polygon.set("fill", polygon.get("fill"));
         notesById[id] = (data.notes || "");
       });
 
-      // If the map exists, update polygon active states
+      // Refresh all polygon fills (adapter reads updated statusById)
       if (polygonSeries) {
-  polygonSeries.mapPolygons.each((polygon) => {
-    applyStatusToPolygon(polygon);
-  });
-}
-
+        polygonSeries.mapPolygons.each((polygon) => {
+          polygon.markDirtyKey("fill");
+        });
+      }
     });
   }
 
@@ -501,16 +459,13 @@ polygon.set("fill", polygon.get("fill"));
     signinBtn.style.display = "none";
     signoutBtn.style.display = "inline-block";
 
-    // Start app once per session
     if (!started) {
       started = true;
       initMap();
       startLiveSync();
     }
   });
-
 </script>
-
 
 </body>
 </html>
